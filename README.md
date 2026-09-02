@@ -169,6 +169,58 @@ the validation gate exists independent of whether the code "looks" fixed
 by eye — a plausible-looking correction can still be wrong in a way only
 the real compiler catches.
 
+### Enriched retry feedback (fixes the "close but 3-attempt failure" case)
+
+The `SearchBoxProps`-undefined bug from real testing took all 3 attempts
+to fail instead of 1 attempt to fix — the raw compiler message ("Cannot
+find name 'SearchBoxProps'") is precise about *what's* wrong but silent on
+*what to do*, which seemed to matter more for a smaller local model than
+for a frontier one.
+
+`src/error-feedback.ts` adds `enrichDiagnostics()`: a small, explicit set
+of pattern → actionable-guidance rules (missing Props interface, leftover
+`this` references, implicit-any) appended to the raw diagnostics before
+they're fed back into the next attempt. `retry-loop.ts` now calls this
+instead of passing raw diagnostics through directly.
+
+Verified with a stub reproducing the exact real bug: the loop converged in
+2 attempts instead of exhausting all 3, and the enriched guidance text was
+confirmed to actually reach the second attempt's prompt (not just
+theoretically wired up).
+
+This is deliberately a small, growing list, not a general "explain any TS
+error" system — add a new rule whenever a new recurring failure pattern
+shows up in real runs (which is exactly how `run-eval.ts` earns its keep:
+it's what surfaces which patterns are actually common enough to be worth
+a rule).
+
+### Eval harness (added after real-model testing surfaced non-determinism)
+
+Testing against a real local model (Ollama, `qwen2.5-coder:7b`) surfaced
+something the stub tests couldn't: **the same fixture produced different
+outputs on different runs** — one run silently dropped the debounce logic
+entirely (compiled fine, `tsc` has no way to know the behavior was wrong),
+another run preserved it correctly but added an over-broad `useEffect`
+dependency. `validateGeneratedCode` only proves code *compiles* — it can't
+catch a behaviorally-wrong-but-syntactically-valid transform.
+
+`src/eval-harness.ts` + `src/run-eval.ts` run the same fixture N times
+against a real `MigrationLLM` and tally, in addition to compile success:
+whether `setTimeout` survived at all, whether the old timer gets cleared,
+and whether the dependency array stayed minimal (heuristic text-pattern
+checks, explicitly **not** real behavioral verification — see the comment
+in `eval-harness.ts` for why that distinction matters and what a more
+rigorous version would look like).
+
+```bash
+EVAL_TRIALS=10 node dist/run-eval.js
+```
+
+This is the mechanism for turning "I ran it once and it looked fine" into
+an actual pass-rate number — see the GenAI interview-prep notes, Section
+11 (Evaluation Methodology), on why single-run testing of a non-
+deterministic system is close to meaningless.
+
 ### Known limitations (v1, honest list — Week 4 specific)
 
 - **Not tested against the real Anthropic API in this environment** — the
@@ -187,12 +239,65 @@ the real compiler catches.
   classifier's tiering needs adjusting), per the GenAI cost-optimization
   notes on model cascading and observability.
 
+## Status: Week 5 — BullMQ Job Queue ✅
+
+Three new pieces:
+
+- `src/queue.ts` — the `migrations` BullMQ queue and shared Redis
+  connection config.
+- `src/process-file.ts` — **queue-agnostic** per-file dispatch logic:
+  classify, then route to the mechanical codemod, the LLM retry loop, or
+  a hard-stop skip, depending on tier. Deliberately knows nothing about
+  BullMQ — this is what a Worker calls, but it's independently testable
+  without Redis running at all.
+- `src/worker.ts` — a thin `Worker` wrapping `processFile`. `concurrency:
+  1` is deliberate (see limitations below, and the open concurrency
+  question from Week 3/4).
+
+### Try it
+
+Requires a running Redis instance (`redis-server`, default port 6379).
+
+```bash
+node dist/run-queue-demo.js
+```
+
+Enqueues all three fixtures as **real jobs on a real Redis-backed queue**
+(verified with `redis-cli keys "bull:migrations:*"` — actual job records
+exist in Redis, not just in-process state) and watches all three tiers
+get correctly routed: `Counter` → mechanical codemod → done. `SearchBox`
+→ LLM retry loop → done. `Modal` → `NEEDS_HUMAN` → skipped without any
+transform attempt, exactly as the classifier's hard-stop design intends.
+
+### Known limitations (v1, honest list — Week 5 specific)
+
+- **`concurrency: 1` sidesteps rather than solves the Week 3/4 concurrency
+  question.** Two workers sharing the same `validateGeneratedCode`
+  temp-file-per-call pattern is a real race condition once concurrency
+  goes above 1 — solving that (either per-worker `Project` instances, or
+  serializing validation calls) is a prerequisite before raising this.
+- **No retry/backoff configured at the BullMQ job level.** If a job
+  throws (e.g. a malformed source file crashes the AST parse), BullMQ's
+  own job-retry mechanism isn't configured yet — right now a thrown error
+  just marks the job `failed` and stops there.
+- **The `demoLLM` stub in `run-queue-demo.ts` is hardcoded to always
+  return a working `SearchBox` migration**, regardless of which file is
+  actually being processed — fine for demonstrating queue mechanics with
+  a small, known fixture set, but not a stand-in for testing the LLM path
+  itself (see Week 4's `run-eval.ts` for that).
+- **No persistence of results beyond BullMQ's own job history.** Job
+  results live in Redis via BullMQ's completed-job records, but nothing
+  writes them to Postgres yet (the architecture's stated storage layer,
+  from the overview diagram) — needed before Week 6's dashboard can show
+  status that survives a Redis flush.
+
 ## Roadmap
 
 - [x] Week 1 — AST classifier
 - [x] Week 2 — Mechanical codemod (MECHANICAL tier → hooks, no LLM)
 - [x] Week 3 — Validation loop (re-parse, `tsc --noEmit`, run test suite)
 - [x] Week 4 — LLM path + retry-on-validation-failure loop for `NEEDS_LLM` tier
+- [x] Week 5 — BullMQ job queue, one job per file
 - [ ] Week 5 — BullMQ job queue, one job per file
 - [ ] Week 6 — WebSocket progress streaming + React diff UI (Monaco)
 - [ ] Week 7 — Git branch workflow + stress test against a real messy repo

@@ -1,6 +1,7 @@
 import { validateGeneratedCode } from "./validator";
 import { MigrationLLM } from "./llm-types";
 import { ClassComponentReport } from "./classifier";
+import { enrichDiagnostics } from "./error-feedback";
 
 export interface MigrationOutcome {
   status: "done" | "needs_human";
@@ -48,7 +49,10 @@ export async function migrateWithRetry(
     // Feed the failure back as context for the next attempt — this is
     // the entire "agent" behavior: the loop doesn't know how to fix
     // anything itself, it just gives the model its own mistake back.
-    previousAttemptError = result.diagnostics.join("\n");
+    // enrichDiagnostics adds actionable guidance for known error
+    // patterns, since raw tsc messages are precise about WHAT is wrong
+    // but silent on WHAT TO DO about it.
+    previousAttemptError = enrichDiagnostics(result.diagnostics.join("\n"));
   }
 
   return {
