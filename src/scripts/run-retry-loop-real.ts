@@ -1,13 +1,13 @@
 
 import { Project } from "ts-morph";
 import path from "path";
-import { classifyFile } from "./classifier";
-import { migrateWithRetry } from "./retry-loop";
-import { anthropicMigrationLLM } from "./llm-client-anthropic";
+import { classifyFile } from "../core/classifier";
+import { migrateWithRetry } from "../llm/retry-loop";
+import { anthropicMigrationLLM } from "../llm/llm-client-anthropic";
 
 async function run() {
   const project = new Project();
-  const searchBoxPath = path.join(__dirname, "..", "src", "fixtures", "02-search-box.tsx");
+  const searchBoxPath = path.join(__dirname, "..", "..", "src", "fixtures", "02-search-box.tsx");
   const sourceFile = project.addSourceFileAtPath(searchBoxPath);
   const cls = sourceFile.getClasses()[0];
   const report = classifyFile(sourceFile)[0];

@@ -1,8 +1,8 @@
 import { Project } from "ts-morph";
 import path from "path";
-import { classifyFile } from "./classifier";
-import { migrateWithRetry } from "./retry-loop";
-import { MigrationLLM } from "./llm-types";
+import { classifyFile } from "../core/classifier";
+import { migrateWithRetry } from "../llm/retry-loop";
+import { MigrationLLM } from "../llm/llm-types";
 
 export interface TrialResult {
   trial: number;

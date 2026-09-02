@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rm -rf dist)",
+      "Bash(npx tsc *)",
+      "Bash(node dist/scripts/run-classifier.js)",
+      "Bash(node dist/scripts/run-validator.js)",
+      "Bash(grep -n 'src/[a-z-]*\\\\.ts`' README.md)"
+    ]
+  }
+}

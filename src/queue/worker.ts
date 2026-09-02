@@ -1,7 +1,7 @@
 import { Worker, Job } from "bullmq";
 import { connection, MIGRATION_QUEUE_NAME, MigrationJobData } from "./queue";
-import { processFile, ComponentJobResult } from "./process-file";
-import { MigrationLLM } from "./llm-types";
+import { processFile, ComponentJobResult } from "../pipeline/process-file";
+import { MigrationLLM } from "../llm/llm-types";
 
 /**
  * concurrency: 1 for now — process one file at a time. This is the

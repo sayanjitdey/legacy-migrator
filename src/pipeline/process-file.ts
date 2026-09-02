@@ -1,9 +1,9 @@
 import { Project } from "ts-morph";
-import { classifyFile } from "./classifier";
-import { generateHooksComponent } from "./codemod";
-import { validateGeneratedCode } from "./validator";
-import { migrateWithRetry } from "./retry-loop";
-import { MigrationLLM } from "./llm-types";
+import { classifyFile } from "../core/classifier";
+import { generateHooksComponent } from "../core/codemod";
+import { validateGeneratedCode } from "../core/validator";
+import { migrateWithRetry } from "../llm/retry-loop";
+import { MigrationLLM } from "../llm/llm-types";
 
 export interface ComponentJobResult {
   filePath: string;

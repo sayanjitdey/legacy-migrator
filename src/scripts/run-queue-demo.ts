@@ -1,10 +1,10 @@
 import path from "path";
-import { migrationQueue } from "./queue";
-import { createMigrationWorker } from "./worker";
-import { MigrationLLM } from "./llm-types";
-import { ComponentJobResult } from "./process-file";
+import { migrationQueue } from "../queue/queue";
+import { createMigrationWorker } from "../queue/worker";
+import { MigrationLLM } from "../llm/llm-types";
+import { ComponentJobResult } from "../pipeline/process-file";
 
-const fixturesDir = path.join(__dirname, "..", "src", "fixtures");
+const fixturesDir = path.join(__dirname, "..", "..", "src", "fixtures");
 const files = ["01-simple-counter.tsx", "02-search-box.tsx", "03-modal-with-ref.tsx"];
 
 /**

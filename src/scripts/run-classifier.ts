@@ -1,7 +1,7 @@
 import path from "path";
-import { classifyProject } from "./classifier";
+import { classifyProject } from "../core/classifier";
 
-const fixturesDir = path.join(__dirname, "..", "src", "fixtures");
+const fixturesDir = path.join(__dirname, "..", "..", "src", "fixtures");
 const reports = classifyProject(fixturesDir);
 
 const tierColor: Record<string, string> = {

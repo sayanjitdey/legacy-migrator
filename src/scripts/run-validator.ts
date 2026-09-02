@@ -1,10 +1,10 @@
 import { Project } from "ts-morph";
 import path from "path";
-import { generateHooksComponent } from "./codemod";
-import { validateGeneratedCode } from "./validator";
+import { generateHooksComponent } from "../core/codemod";
+import { validateGeneratedCode } from "../core/validator";
 
 const project = new Project();
-const originalPath = path.join(__dirname, "..", "src", "fixtures", "01-simple-counter.tsx");
+const originalPath = path.join(__dirname, "..", "..", "src", "fixtures", "01-simple-counter.tsx");
 const sourceFile = project.addSourceFileAtPath(originalPath);
 const cls = sourceFile.getClasses()[0];
 

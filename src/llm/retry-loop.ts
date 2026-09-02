@@ -1,7 +1,7 @@
-import { validateGeneratedCode } from "./validator";
+import { validateGeneratedCode } from "../core/validator";
 import { MigrationLLM } from "./llm-types";
-import { ClassComponentReport } from "./classifier";
-import { enrichDiagnostics } from "./error-feedback";
+import { ClassComponentReport } from "../core/classifier";
+import { enrichDiagnostics } from "../core/error-feedback";
 
 export interface MigrationOutcome {
   status: "done" | "needs_human";

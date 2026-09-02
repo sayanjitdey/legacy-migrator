@@ -24,7 +24,7 @@ export function validateGeneratedCode(
   const tempFilePath = path.join(dir, `${base}.generated.tsx`);
 
   const project = new Project({
-    tsConfigFilePath: path.join(__dirname, "..", "tsconfig.json"),
+    tsConfigFilePath: path.join(__dirname, "..", "..", "tsconfig.json"),
   });
 
   // Overwrite: true lets us re-run this repeatedly without ts-morph

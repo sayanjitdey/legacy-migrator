@@ -1,11 +1,11 @@
 import { Project } from "ts-morph";
 import path from "path";
-import { classifyFile } from "./classifier";
-import { migrateWithRetry } from "./retry-loop";
-import { MigrationLLM } from "./llm-types";
+import { classifyFile } from "../core/classifier";
+import { migrateWithRetry } from "../llm/retry-loop";
+import { MigrationLLM } from "../llm/llm-types";
 
 const project = new Project();
-const searchBoxPath = path.join(__dirname, "..", "src", "fixtures", "02-search-box.tsx");
+const searchBoxPath = path.join(__dirname, "..", "..", "src", "fixtures", "02-search-box.tsx");
 const sourceFile = project.addSourceFileAtPath(searchBoxPath);
 const cls = sourceFile.getClasses()[0];
 const report = classifyFile(sourceFile)[0]; // SearchBox -> NEEDS_LLM
