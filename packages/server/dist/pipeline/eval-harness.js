@@ -38,7 +38,11 @@ async function runEvalTrials(fixturePath, llm, numTrials) {
         const cls = sourceFile.getClasses()[0];
         const report = (0, classifier_1.classifyFile)(sourceFile)[0];
         const classSourceText = cls.getText();
-        const outcome = await (0, retry_loop_1.migrateWithRetry)(fixturePath, classSourceText, report, llm);
+        const existingImports = sourceFile
+            .getImportDeclarations()
+            .map((imp) => imp.getText())
+            .join("\n");
+        const outcome = await (0, retry_loop_1.migrateWithRetry)(fixturePath, classSourceText, report, llm, existingImports);
         const heuristics = runHeuristicChecks(outcome.code);
         results.push({
             trial,

@@ -73,7 +73,11 @@ export async function processFile(
     }
 
     // NEEDS_LLM
-    const outcome = await migrateWithRetry(filePath, originalCode, report, llm);
+    const existingImports = sourceFile
+      .getImportDeclarations()
+      .map((imp) => imp.getText())
+      .join("\n");
+    const outcome = await migrateWithRetry(filePath, originalCode, report, llm, existingImports);
     results.push({
       filePath,
       className: report.className,

@@ -25,6 +25,7 @@ export async function migrateWithRetry(
   classSourceText: string,
   report: ClassComponentReport,
   llm: MigrationLLM,
+  existingImports = "",
   maxAttempts = 3
 ): Promise<MigrationOutcome> {
   let previousAttemptError: string | undefined;
@@ -36,6 +37,7 @@ export async function migrateWithRetry(
       classSourceText,
       reasonsForLLMTier: report.reasons,
       previousAttemptError,
+      existingImports,
     });
 
     const result = validateGeneratedCode(originalFilePath, code);

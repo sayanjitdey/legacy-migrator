@@ -14,6 +14,9 @@ export const anthropicMigrationLLM: MigrationLLM = async (request) => {
   const feedbackBlock = request.previousAttemptError
     ? `\n\nYour previous attempt failed validation with this error:\n${request.previousAttemptError}\n\nFix this specific issue.`
     : "";
+  const importsBlock = request.existingImports
+    ? `\n\nThe original file imports these exact modules — reuse these exact\nimport paths verbatim for anything you still reference (sibling\ncomponents, helpers, styles, etc.). Do NOT invent, guess, or alter any of\nthese paths, and do NOT drop one that's still used just because it wasn't\nshown to you elsewhere:\n\`\`\`\n${request.existingImports}\n\`\`\``
+    : "";
 
   const response = await client.messages.create({
     model: "claude-sonnet-4-6",
@@ -46,6 +49,7 @@ ${request.reasonsForLLMTier.map((r) => `- ${r}`).join("\n")}
 Pay particular attention to translating lifecycle-method comparison logic
 (e.g. componentDidUpdate prop diffs) into correct useEffect dependency
 arrays — the goal is behavioral equivalence, not just syntactic similarity.
+${importsBlock}
 
 Original component:
 \`\`\`tsx

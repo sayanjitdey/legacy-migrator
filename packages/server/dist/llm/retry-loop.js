@@ -13,7 +13,7 @@ const error_feedback_1 = require("../core/error-feedback");
  * git or mark anything as "done" for a human — it only returns a result;
  * Week 5's job queue decides what happens with a needs_human outcome.
  */
-async function migrateWithRetry(originalFilePath, classSourceText, report, llm, maxAttempts = 3) {
+async function migrateWithRetry(originalFilePath, classSourceText, report, llm, existingImports = "", maxAttempts = 3) {
     let previousAttemptError;
     let lastCode = "";
     let lastDiagnostics = [];
@@ -22,6 +22,7 @@ async function migrateWithRetry(originalFilePath, classSourceText, report, llm, 
             classSourceText,
             reasonsForLLMTier: report.reasons,
             previousAttemptError,
+            existingImports,
         });
         const result = (0, validator_1.validateGeneratedCode)(originalFilePath, code);
         lastCode = code;

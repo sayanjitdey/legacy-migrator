@@ -18,6 +18,10 @@ const FEEDBACK_RULES = [
         pattern: /implicitly has an 'any' type/,
         guidance: "A parameter or variable is missing an explicit type. Add an explicit type annotation rather than leaving it to inference.",
     },
+    {
+        pattern: /does not exist on type 'never'/,
+        guidance: "A `useRef(null)` call is missing its generic type argument, so TypeScript infers the ref's type as `null`/`never` instead of the actual element type — accessing `.current.someMethod()` then fails even behind a truthy check. Add an explicit generic matching what's actually assigned to `.current`, e.g. `useRef<HTMLInputElement>(null)`.",
+    },
 ];
 function enrichDiagnostics(rawDiagnostics) {
     const matchedGuidance = FEEDBACK_RULES.filter((rule) => rule.pattern.test(rawDiagnostics)).map((rule) => rule.guidance);

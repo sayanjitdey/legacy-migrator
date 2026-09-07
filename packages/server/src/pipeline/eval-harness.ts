@@ -57,7 +57,11 @@ export async function runEvalTrials(
     const report = classifyFile(sourceFile)[0];
     const classSourceText = cls.getText();
 
-    const outcome = await migrateWithRetry(fixturePath, classSourceText, report, llm);
+    const existingImports = sourceFile
+      .getImportDeclarations()
+      .map((imp) => imp.getText())
+      .join("\n");
+    const outcome = await migrateWithRetry(fixturePath, classSourceText, report, llm, existingImports);
     const heuristics = runHeuristicChecks(outcome.code);
 
     results.push({

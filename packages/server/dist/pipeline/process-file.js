@@ -56,7 +56,11 @@ async function processFile(filePath, llm) {
             continue;
         }
         // NEEDS_LLM
-        const outcome = await (0, retry_loop_1.migrateWithRetry)(filePath, originalCode, report, llm);
+        const existingImports = sourceFile
+            .getImportDeclarations()
+            .map((imp) => imp.getText())
+            .join("\n");
+        const outcome = await (0, retry_loop_1.migrateWithRetry)(filePath, originalCode, report, llm, existingImports);
         results.push({
             filePath,
             className: report.className,

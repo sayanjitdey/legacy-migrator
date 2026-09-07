@@ -15,7 +15,7 @@ async function run() {
     const cls = sourceFile.getClasses()[0];
     const report = (0, classifier_1.classifyFile)(sourceFile)[0];
     const classSourceText = cls.getText();
-    const outcome = await (0, retry_loop_1.migrateWithRetry)(searchBoxPath, classSourceText, report, llm_client_anthropic_1.anthropicMigrationLLM);
+    const outcome = await (0, retry_loop_1.migrateWithRetry)(searchBoxPath, classSourceText, report, llm_client_anthropic_1.anthropicMigrationLLM, "");
     console.log(`status: ${outcome.status}, attempts: ${outcome.attempts}`);
     console.log("\n--- generated code ---\n");
     console.log(outcome.code);

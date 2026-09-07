@@ -82,7 +82,7 @@ function SearchBox(props: any) {
 }
 export default SearchBox;`;
     };
-    const outcome = await (0, retry_loop_1.migrateWithRetry)(searchBoxPath, classSourceText, report, stubLLM);
+    const outcome = await (0, retry_loop_1.migrateWithRetry)(searchBoxPath, classSourceText, report, stubLLM, "");
     console.log("=== Scenario 1: succeeds on retry ===");
     console.log(`status: ${outcome.status}, attempts: ${outcome.attempts}`);
     console.log("");
@@ -93,7 +93,7 @@ async function scenarioNeverSucceeds() {
     const alwaysBrokenLLM = async () => {
         return `function SearchBox(props) { return this.nonsense; }`;
     };
-    const outcome = await (0, retry_loop_1.migrateWithRetry)(searchBoxPath, classSourceText, report, alwaysBrokenLLM, 2 // maxAttempts, lowered just for this demo
+    const outcome = await (0, retry_loop_1.migrateWithRetry)(searchBoxPath, classSourceText, report, alwaysBrokenLLM, "", 2 // maxAttempts, lowered just for this demo
     );
     console.log("=== Scenario 2: never succeeds, escalates ===");
     console.log(`status: ${outcome.status}, attempts: ${outcome.attempts}`);

@@ -81,7 +81,7 @@ function SearchBox(props: any) {
 export default SearchBox;`;
   };
 
-  const outcome = await migrateWithRetry(searchBoxPath, classSourceText, report, stubLLM);
+  const outcome = await migrateWithRetry(searchBoxPath, classSourceText, report, stubLLM, "");
   console.log("=== Scenario 1: succeeds on retry ===");
   console.log(`status: ${outcome.status}, attempts: ${outcome.attempts}`);
   console.log("");
@@ -99,6 +99,7 @@ async function scenarioNeverSucceeds() {
     classSourceText,
     report,
     alwaysBrokenLLM,
+    "",
     2 // maxAttempts, lowered just for this demo
   );
   console.log("=== Scenario 2: never succeeds, escalates ===");

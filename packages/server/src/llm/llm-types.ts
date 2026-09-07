@@ -10,6 +10,13 @@ export interface MigrationRequest {
   classSourceText: string;
   reasonsForLLMTier: string[];
   previousAttemptError?: string;
+  // The original file's own import declarations, verbatim. Without this
+  // the model only ever sees the isolated class body and has no way to
+  // know the real paths for sibling components/helpers/styles it
+  // references — it ends up guessing plausible-looking imports (wrong
+  // relative paths, invented package names) instead of reusing the real
+  // ones. Empty string when unavailable to the caller.
+  existingImports: string;
 }
 
 export type MigrationLLM = (request: MigrationRequest) => Promise<string>;
