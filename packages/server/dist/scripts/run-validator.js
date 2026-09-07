@@ -1,0 +1,21 @@
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const ts_morph_1 = require("ts-morph");
+const path_1 = __importDefault(require("path"));
+const codemod_1 = require("../core/codemod");
+const validator_1 = require("../core/validator");
+const project = new ts_morph_1.Project();
+const originalPath = path_1.default.join(__dirname, "..", "..", "src", "fixtures", "01-simple-counter.tsx");
+const sourceFile = project.addSourceFileAtPath(originalPath);
+const cls = sourceFile.getClasses()[0];
+console.log("=== Case 1: correct codemod output ===");
+const goodCode = (0, codemod_1.generateHooksComponent)(cls);
+const goodResult = (0, validator_1.validateGeneratedCode)(originalPath, goodCode);
+console.log(JSON.stringify(goodResult, null, 2));
+console.log("\n=== Case 2: deliberately broken output (this.increment left unrewritten) ===");
+const brokenCode = goodCode.replace("onClick={increment}", "onClick={this.increment}");
+const brokenResult = (0, validator_1.validateGeneratedCode)(originalPath, brokenCode);
+console.log(JSON.stringify(brokenResult, null, 2));
