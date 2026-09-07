@@ -1,11 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(rm -rf dist)",
-      "Bash(npx tsc *)",
-      "Bash(node dist/scripts/run-classifier.js)",
-      "Bash(node dist/scripts/run-validator.js)",
-      "Bash(grep -n 'src/[a-z-]*\\\\.ts`' README.md)"
+      "Bash(rm -rf packages/server/dist)",
+      "Bash(npm run build)",
+      "Bash(node packages/server/dist/scripts/run-classifier.js)",
+      "Bash(node packages/server/dist/scripts/run-validator.js)",
+      "Bash(grep -n 'packages/server/src/[a-z-]*\\\\.ts`' README.md)"
     ]
   }
 }

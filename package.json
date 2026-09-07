@@ -1,25 +1,19 @@
 {
   "name": "legacy-migrator",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "An AI-assisted tool for migrating React class components to hooks.",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
+    "build": "npm run build --workspace=@legacy-migrator/server",
+    "start": "npm run start --workspace=@legacy-migrator/server",
+    "dev:ui": "npm run dev --workspace=legacy-migrator-ui",
+    "build:ui": "npm run build --workspace=legacy-migrator-ui",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
-  "devDependencies": {
-    "@types/node": "^26.4.1",
-    "ts-morph": "^28.0.0",
-    "ts-node": "^10.9.2",
-    "typescript": "^7.0.2"
-  },
-  "dependencies": {
-    "@anthropic-ai/sdk": "^0.123.0",
-    "@types/react": "^19.2.18",
-    "bullmq": "^6.3.4",
-    "ioredis": "^6.0.0",
-    "react": "^19.2.8"
-  }
+  "license": "ISC"
 }

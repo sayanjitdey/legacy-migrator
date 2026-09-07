@@ -13,7 +13,7 @@ React class component into one of three tiers: `MECHANICAL`, `NEEDS_LLM`,
 `NEEDS_HUMAN`. No LLM calls happen in this step.
 
 ```bash
-node dist/scripts/run-classifier.js
+node packages/server/dist/scripts/run-classifier.js
 ```
 
 | Fixture | Expected tier | Why |
@@ -29,7 +29,7 @@ escalates the tier); HOC detection only catches same-file wrapping.
 
 ## Status: Week 2 — Mechanical Codemod ✅
 
-`src/core/codemod.ts` takes a `MECHANICAL`-tier class component and generates its
+`packages/server/src/core/codemod.ts` takes a `MECHANICAL`-tier class component and generates its
 hooks equivalent — no LLM call involved. Verified against
 `01-simple-counter.tsx`.
 
@@ -37,8 +37,8 @@ hooks equivalent — no LLM call involved. Verified against
 
 ```bash
 npm install
-npx tsc
-node dist/scripts/run-codemod.js
+npm run build
+node packages/server/dist/scripts/run-codemod.js
 ```
 
 ### What it currently handles
@@ -82,14 +82,14 @@ node dist/scripts/run-codemod.js
 
 ## Status: Week 3 — Validation Loop ✅
 
-`src/core/validator.ts` runs generated code through the **real TypeScript
+`packages/server/src/core/validator.ts` runs generated code through the **real TypeScript
 compiler** (via a fresh `ts-morph` `Project` loaded with the repo's actual
 `tsconfig.json`) and reports `getPreEmitDiagnostics()` — the same check
 `tsc --noEmit` performs. This catches both syntax errors and type errors,
 in one pass, for any code the codemod or (later) the LLM produces.
 
 ```bash
-node dist/scripts/run-validator.js
+node packages/server/dist/scripts/run-validator.js
 ```
 
 This runs two cases side by side: the correct codemod output (`valid:
@@ -130,16 +130,16 @@ revealed two real bugs that had been silently wrong the whole time:
 
 Three new pieces:
 
-- `src/llm/llm-types.ts` — a `MigrationLLM` interface. The retry loop only
+- `packages/server/src/llm/llm-types.ts` — a `MigrationLLM` interface. The retry loop only
   depends on this shape (`(request) => Promise<string>`), never on the
   Anthropic SDK directly — that's what makes the loop testable without
   hitting the network.
-- `src/llm/llm-client-anthropic.ts` — the real client, using tool-calling to
+- `packages/server/src/llm/llm-client-anthropic.ts` — the real client, using tool-calling to
   force structured output (a `return_migrated_component` tool call rather
   than parsing free-form text). Requires `ANTHROPIC_API_KEY` in your
   environment to actually run — not exercised in this sandbox, but ready
   to use once you drop in a key.
-- `src/llm/retry-loop.ts` — `migrateWithRetry()`: the agent loop. Calls the
+- `packages/server/src/llm/retry-loop.ts` — `migrateWithRetry()`: the agent loop. Calls the
   LLM, validates the result, and on failure feeds the validator's
   diagnostics back into the next attempt's prompt. Gives up after
   `maxAttempts` (default 3) and returns `needs_human` with the last
@@ -148,7 +148,7 @@ Three new pieces:
 ### Try it
 
 ```bash
-node dist/scripts/run-retry-loop.js
+node packages/server/dist/scripts/run-retry-loop.js
 ```
 
 Runs two scenarios against a **stub** LLM (no network call, fully
@@ -177,7 +177,7 @@ find name 'SearchBoxProps'") is precise about *what's* wrong but silent on
 *what to do*, which seemed to matter more for a smaller local model than
 for a frontier one.
 
-`src/core/error-feedback.ts` adds `enrichDiagnostics()`: a small, explicit set
+`packages/server/src/core/error-feedback.ts` adds `enrichDiagnostics()`: a small, explicit set
 of pattern → actionable-guidance rules (missing Props interface, leftover
 `this` references, implicit-any) appended to the raw diagnostics before
 they're fed back into the next attempt. `retry-loop.ts` now calls this
@@ -204,7 +204,7 @@ another run preserved it correctly but added an over-broad `useEffect`
 dependency. `validateGeneratedCode` only proves code *compiles* — it can't
 catch a behaviorally-wrong-but-syntactically-valid transform.
 
-`src/pipeline/eval-harness.ts` + `src/scripts/run-eval.ts` run the same fixture N times
+`packages/server/src/pipeline/eval-harness.ts` + `packages/server/src/scripts/run-eval.ts` run the same fixture N times
 against a real `MigrationLLM` and tally, in addition to compile success:
 whether `setTimeout` survived at all, whether the old timer gets cleared,
 and whether the dependency array stayed minimal (heuristic text-pattern
@@ -213,7 +213,7 @@ in `eval-harness.ts` for why that distinction matters and what a more
 rigorous version would look like).
 
 ```bash
-EVAL_TRIALS=10 node dist/scripts/run-eval.js
+EVAL_TRIALS=10 node packages/server/dist/scripts/run-eval.js
 ```
 
 This is the mechanism for turning "I ran it once and it looked fine" into
@@ -243,14 +243,14 @@ deterministic system is close to meaningless.
 
 Three new pieces:
 
-- `src/queue/queue.ts` — the `migrations` BullMQ queue and shared Redis
+- `packages/server/src/queue/queue.ts` — the `migrations` BullMQ queue and shared Redis
   connection config.
-- `src/pipeline/process-file.ts` — **queue-agnostic** per-file dispatch logic:
+- `packages/server/src/pipeline/process-file.ts` — **queue-agnostic** per-file dispatch logic:
   classify, then route to the mechanical codemod, the LLM retry loop, or
   a hard-stop skip, depending on tier. Deliberately knows nothing about
   BullMQ — this is what a Worker calls, but it's independently testable
   without Redis running at all.
-- `src/queue/worker.ts` — a thin `Worker` wrapping `processFile`. `concurrency:
+- `packages/server/src/queue/worker.ts` — a thin `Worker` wrapping `processFile`. `concurrency:
   1` is deliberate (see limitations below, and the open concurrency
   question from Week 3/4).
 
@@ -259,7 +259,7 @@ Three new pieces:
 Requires a running Redis instance (`redis-server`, default port 6379).
 
 ```bash
-node dist/scripts/run-queue-demo.js
+node packages/server/dist/scripts/run-queue-demo.js
 ```
 
 Enqueues all three fixtures as **real jobs on a real Redis-backed queue**

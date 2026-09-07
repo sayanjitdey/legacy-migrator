@@ -12,6 +12,8 @@ export interface ComponentJobResult {
   status: "done" | "needs_human" | "skipped_hard_stop";
   attempts: number;
   diagnostics: string[];
+  originalCode: string;
+  generatedCode: string | null;
 }
 
 /**
@@ -34,6 +36,8 @@ export async function processFile(
     const cls = sourceFile.getClasses().find((c) => c.getName() === report.className);
     if (!cls) continue;
 
+    const originalCode = cls.getText();
+
     if (report.tier === "NEEDS_HUMAN") {
       // Never attempt a transform for hard-stop cases — this tier exists
       // specifically to prevent automated changes to HOC-wrapped or
@@ -46,6 +50,8 @@ export async function processFile(
         status: "skipped_hard_stop",
         attempts: 0,
         diagnostics: report.reasons,
+        originalCode,
+        generatedCode: null,
       });
       continue;
     }
@@ -60,12 +66,14 @@ export async function processFile(
         status: validation.valid ? "done" : "needs_human",
         attempts: 1,
         diagnostics: validation.diagnostics,
+        originalCode,
+        generatedCode: code,
       });
       continue;
     }
 
     // NEEDS_LLM
-    const outcome = await migrateWithRetry(filePath, cls.getText(), report, llm);
+    const outcome = await migrateWithRetry(filePath, originalCode, report, llm);
     results.push({
       filePath,
       className: report.className,
@@ -73,6 +81,8 @@ export async function processFile(
       status: outcome.status,
       attempts: outcome.attempts,
       diagnostics: outcome.finalDiagnostics,
+      originalCode,
+      generatedCode: outcome.code || null,
     });
   }
 
