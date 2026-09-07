@@ -61,12 +61,43 @@ const MECHANICALLY_SAFE_LIFECYCLE = new Set([
   "componentWillUnmount",
 ]);
 
+function hasExtractableStateDeclaration(cls: ClassDeclaration): boolean {
+  const ctor = cls.getConstructors()[0];
+  if (ctor) {
+    const body = ctor.getBody();
+    if (body && body.getText().includes("this.state")) return true;
+  }
+  const stateProperty = cls.getProperty("state");
+  return !!stateProperty?.getInitializer();
+}
+
+function hasUnsupportedSetStatePattern(cls: ClassDeclaration): boolean {
+  const setStateCalls = cls
+    .getDescendantsOfKind(SyntaxKind.CallExpression)
+    .filter((call) => call.getExpression().getText() === "this.setState");
+
+  for (const call of setStateCalls) {
+    const arg = call.getArguments()[0];
+    if (!arg) continue;
+
+    const isFunctionalUpdater =
+      arg.getKind() === SyntaxKind.ArrowFunction ||
+      arg.getKind() === SyntaxKind.FunctionExpression;
+    if (isFunctionalUpdater) return true;
+
+    const objectLiteral = arg.asKind(SyntaxKind.ObjectLiteralExpression);
+    if (objectLiteral && objectLiteral.getProperties().length > 1) return true;
+  }
+
+  return false;
+}
+
 function isReactClassComponent(cls: ClassDeclaration): boolean {
   const extendsExpr = cls.getExtends();
   if (!extendsExpr) return false;
   const text = extendsExpr.getText();
   return /React\.Component|React\.PureComponent|^Component$|^PureComponent$/.test(
-    text
+    text,
   );
 }
 
@@ -159,7 +190,10 @@ function assessLifecycleComplexity(method: MethodDeclaration): {
     };
   }
 
-  return { isMechanical: true, reason: `${name} is simple enough for direct codemod` };
+  return {
+    isMechanical: true,
+    reason: `${name} is simple enough for direct codemod`,
+  };
 }
 
 export function classifyFile(sourceFile: SourceFile): ClassComponentReport[] {
@@ -173,13 +207,13 @@ export function classifyFile(sourceFile: SourceFile): ClassComponentReport[] {
     const hasRefs = detectRefs(cls);
     const isWrappedByHOC = detectHOCWrapping(sourceFile, className);
     const hasShouldComponentUpdate = lifecycleMethodDecls.some(
-      (m) => m.getName() === "shouldComponentUpdate"
+      (m) => m.getName() === "shouldComponentUpdate",
     );
     const hasInstanceMethodsExposedExternally =
       detectLikelyImperativeExposure(cls);
-    const hasState = cls
-      .getText()
-      .includes("this.state") || cls.getText().includes("this.setState");
+    const hasState =
+      cls.getText().includes("this.state") ||
+      cls.getText().includes("this.setState");
 
     const reasons: string[] = [];
     const lifecycleMethods: LifecycleMethodInfo[] = lifecycleMethodDecls.map(
@@ -187,18 +221,18 @@ export function classifyFile(sourceFile: SourceFile): ClassComponentReport[] {
         name: m.getName(),
         bodyText: m.getBodyText() ?? "",
         paramCount: m.getParameters().length,
-      })
+      }),
     );
 
     // --- Decision tree: NEEDS_HUMAN cases first (hard stops) ---
     if (isWrappedByHOC) {
       reasons.push(
-        "Component is wrapped by a HOC in this file — migration must preserve wrapper behavior; not safe to auto-migrate in isolation."
+        "Component is wrapped by a HOC in this file — migration must preserve wrapper behavior; not safe to auto-migrate in isolation.",
       );
     }
     if (hasInstanceMethodsExposedExternally) {
       reasons.push(
-        "Component appears to expose instance methods imperatively to parents (ref-based API) — hooks equivalent (useImperativeHandle) requires manual review."
+        "Component appears to expose instance methods imperatively to parents (ref-based API) — hooks equivalent (useImperativeHandle) requires manual review.",
       );
     }
     if (isWrappedByHOC || hasInstanceMethodsExposedExternally) {
@@ -220,7 +254,19 @@ export function classifyFile(sourceFile: SourceFile): ClassComponentReport[] {
     // --- NEEDS_LLM cases ---
     if (hasShouldComponentUpdate) {
       reasons.push(
-        "shouldComponentUpdate present — translating to React.memo/useMemo comparison logic requires judgment."
+        "shouldComponentUpdate present — translating to React.memo/useMemo comparison logic requires judgment.",
+      );
+    }
+
+    if (!hasExtractableStateDeclaration(cls) && hasState) {
+      reasons.push(
+        "State is referenced but not declared in a constructor or as a simple class field — cannot reliably extract initial state shape for useState.",
+      );
+    }
+
+    if (hasUnsupportedSetStatePattern(cls)) {
+      reasons.push(
+        "Contains multi-key or functional-updater setState calls — the deterministic codemod only rewrites single-key setState calls safely; this needs judgment to translate correctly.",
       );
     }
 
@@ -233,7 +279,16 @@ export function classifyFile(sourceFile: SourceFile): ClassComponentReport[] {
       }
     }
 
-    if (!allLifecycleMechanical || hasShouldComponentUpdate) {
+    const stateDeclarationUnextractable =
+      !hasExtractableStateDeclaration(cls) && hasState;
+    const unsupportedSetState = hasUnsupportedSetStatePattern(cls);
+
+    if (
+      !allLifecycleMechanical ||
+      hasShouldComponentUpdate ||
+      stateDeclarationUnextractable ||
+      unsupportedSetState
+    ) {
       reports.push({
         fileName: sourceFile.getBaseName(),
         className,
@@ -251,7 +306,7 @@ export function classifyFile(sourceFile: SourceFile): ClassComponentReport[] {
 
     // --- MECHANICAL: everything checked out as simple ---
     reasons.push(
-      "All lifecycle methods are simple and map directly to known hook patterns."
+      "All lifecycle methods are simple and map directly to known hook patterns.",
     );
     reports.push({
       fileName: sourceFile.getBaseName(),

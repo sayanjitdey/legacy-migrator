@@ -1,8 +1,12 @@
-import express, { Request, Response } from "express";
+import express,{Request, Response} from "express";
 import http from "http";
+import path from "path";
 import { WebSocketServer, WebSocket } from "ws";
 import { migrationQueue } from "./queue/queue";
 import { setupQueueEventBroadcasting } from "./queue/queue-events";
+import { commitApprovedMigration, logRejection } from "./git/git-service";
+
+const TARGET_REPO_ROOT = process.env.TARGET_REPO_ROOT ?? path.join(__dirname, "..");
 
 const app = express();
 app.use(express.json());
@@ -31,6 +35,43 @@ function broadcast(message: unknown) {
 }
 
 setupQueueEventBroadcasting(broadcast);
+
+app.post("/api/jobs/approve", async (req, res) => {
+  const { filePath, className, generatedCode } = req.body as {
+    filePath?: string;
+    className?: string;
+    generatedCode?: string;
+  };
+
+  if (!filePath || !className || !generatedCode) {
+    res.status(400).json({ error: "filePath, className, and generatedCode are required" });
+    return;
+  }
+
+  try {
+    const result = await commitApprovedMigration(
+      TARGET_REPO_ROOT,
+      filePath,
+      className,
+      generatedCode
+    );
+    console.log(`[approved] ${className} committed to ${result.branch} (${result.commitHash})`);
+    res.json(result);
+  } catch (err) {
+    console.error("[approve] failed:", err);
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+app.post("/api/jobs/reject", (req, res) => {
+  const { filePath, className, reason } = req.body as {
+    filePath?: string;
+    className?: string;
+    reason?: string;
+  };
+  logRejection(filePath ?? "unknown", className ?? "unknown", reason);
+  res.json({ status: "rejected" });
+});
 
 app.post("/api/migrate", async (req: Request, res: Response) => {
   const { files } = req.body as { files?: string[] };
