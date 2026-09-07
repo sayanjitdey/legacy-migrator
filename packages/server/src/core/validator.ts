@@ -15,22 +15,19 @@ export interface ValidationResult {
  * real ts-morph Project (loaded with the repo's actual tsconfig, so it has
  * real type information — React types, etc.) and ask for diagnostics.
  */
-// Validation always happens inside this package's own tree, regardless of
-// where originalFilePath lives. Generated code is type-checked using OUR
-// installed React types, not the original repo's — the source may come
-// from a git-cloned repo (in os.tmpdir(), never npm-installed) that has no
-// node_modules of its own, so resolving "react" from its actual directory
-// would always fail with a spurious "Cannot find module" error.
-const VALIDATION_SCRATCH_DIR = path.join(__dirname, "..", "..", ".validate-tmp");
-
 export function validateGeneratedCode(
   originalFilePath: string,
   generatedCode: string
 ): ValidationResult {
   const dir = path.dirname(originalFilePath);
   const base = path.basename(originalFilePath, path.extname(originalFilePath));
-  fs.mkdirSync(VALIDATION_SCRATCH_DIR, { recursive: true });
-  const tempFilePath = path.join(VALIDATION_SCRATCH_DIR, `${base}.generated.tsx`);
+  // Deliberately validated next to the original file, not in some fixed
+  // scratch directory — the generated code's relative imports (./Api,
+  // ./Designer, ...) only resolve correctly from here, against the real
+  // sibling files. A cloned repo has no node_modules of its own for bare
+  // imports like "react" to resolve against; cloneRepo() addresses that by
+  // linking one in at the repo root, which this directory sits under.
+  const tempFilePath = path.join(dir, `${base}.generated.tsx`);
 
   const project = new Project({
     tsConfigFilePath: path.join(__dirname, "..", "..", "tsconfig.json"),

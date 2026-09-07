@@ -19,6 +19,28 @@ const ALLOWED_REPO_URL = /^(https:\/\/[\w.-]+\/[\w.\-/]+?(?:\.git)?|git@[\w.-]+:
 function getGit(repoRoot) {
     return (0, simple_git_1.default)({ baseDir: repoRoot });
 }
+// A cloned repo is never npm-installed (we only ever read/parse it), so it
+// has no node_modules of its own — bare imports like "react" would fail to
+// resolve from anywhere inside it. Linking our own node_modules in at the
+// repo root fixes that for react/react-dom (the packages every migration
+// actually needs) via ordinary up-tree module resolution, without touching
+// how the target repo's *own* relative imports resolve (those already work
+// correctly against the real cloned files). A junction on Windows, a
+// symlink elsewhere — neither requires elevated privileges. Best-effort:
+// if it fails, bare-import diagnostics just fall back to being suppressed
+// as "unresolvable third-party dependency" like any other missing package.
+function linkNodeModules(targetDir) {
+    try {
+        const ourNodeModules = path_1.default.dirname(path_1.default.dirname(require.resolve("react/package.json")));
+        const linkPath = path_1.default.join(targetDir, "node_modules");
+        if (fs_1.default.existsSync(linkPath))
+            return;
+        fs_1.default.symlinkSync(ourNodeModules, linkPath, process.platform === "win32" ? "junction" : "dir");
+    }
+    catch (err) {
+        console.warn(`[git-service] Could not link node_modules into cloned repo — react type resolution will be unavailable during validation: ${err.message}`);
+    }
+}
 async function cloneRepo(repoUrl) {
     if (!ALLOWED_REPO_URL.test(repoUrl)) {
         throw new Error(`Refusing to clone '${repoUrl}' — only https:// or git@ remote URLs are allowed.`);
@@ -27,6 +49,7 @@ async function cloneRepo(repoUrl) {
     fs_1.default.mkdirSync(targetDir, { recursive: true });
     const git = (0, simple_git_1.default)();
     await git.clone(repoUrl, targetDir, ["--depth", "1"]);
+    linkNodeModules(targetDir);
     return targetDir;
 }
 async function ensureMigrationBranch(repoRoot) {

@@ -14,6 +14,29 @@ function getGit(repoRoot: string): SimpleGit {
   return simpleGit({ baseDir: repoRoot });
 }
 
+// A cloned repo is never npm-installed (we only ever read/parse it), so it
+// has no node_modules of its own — bare imports like "react" would fail to
+// resolve from anywhere inside it. Linking our own node_modules in at the
+// repo root fixes that for react/react-dom (the packages every migration
+// actually needs) via ordinary up-tree module resolution, without touching
+// how the target repo's *own* relative imports resolve (those already work
+// correctly against the real cloned files). A junction on Windows, a
+// symlink elsewhere — neither requires elevated privileges. Best-effort:
+// if it fails, bare-import diagnostics just fall back to being suppressed
+// as "unresolvable third-party dependency" like any other missing package.
+function linkNodeModules(targetDir: string): void {
+  try {
+    const ourNodeModules = path.dirname(path.dirname(require.resolve("react/package.json")));
+    const linkPath = path.join(targetDir, "node_modules");
+    if (fs.existsSync(linkPath)) return;
+    fs.symlinkSync(ourNodeModules, linkPath, process.platform === "win32" ? "junction" : "dir");
+  } catch (err) {
+    console.warn(
+      `[git-service] Could not link node_modules into cloned repo — react type resolution will be unavailable during validation: ${(err as Error).message}`
+    );
+  }
+}
+
 export async function cloneRepo(repoUrl: string): Promise<string> {
   if (!ALLOWED_REPO_URL.test(repoUrl)) {
     throw new Error(`Refusing to clone '${repoUrl}' — only https:// or git@ remote URLs are allowed.`);
@@ -24,6 +47,7 @@ export async function cloneRepo(repoUrl: string): Promise<string> {
 
   const git = simpleGit();
   await git.clone(repoUrl, targetDir, ["--depth", "1"]);
+  linkNodeModules(targetDir);
 
   return targetDir;
 }
