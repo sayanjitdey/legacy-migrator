@@ -327,7 +327,10 @@ export function classifyFile(sourceFile: SourceFile): ClassComponentReport[] {
 
 export function classifyProject(rootDir: string): ClassComponentReport[] {
   const project = new Project();
-  project.addSourceFilesAtPaths(`${rootDir}/**/*.tsx`);
+  project.addSourceFilesAtPaths([
+    `${rootDir}/**/*.{tsx,jsx,js}`,
+    `!${rootDir}/**/node_modules/**`,
+  ]);
 
   const allReports: ClassComponentReport[] = [];
   for (const sourceFile of project.getSourceFiles()) {

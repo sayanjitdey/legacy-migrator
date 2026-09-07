@@ -249,7 +249,10 @@ function classifyFile(sourceFile) {
 }
 function classifyProject(rootDir) {
     const project = new ts_morph_1.Project();
-    project.addSourceFilesAtPaths(`${rootDir}/**/*.tsx`);
+    project.addSourceFilesAtPaths([
+        `${rootDir}/**/*.{tsx,jsx,js}`,
+        `!${rootDir}/**/node_modules/**`,
+    ]);
     const allReports = [];
     for (const sourceFile of project.getSourceFiles()) {
         allReports.push(...classifyFile(sourceFile));

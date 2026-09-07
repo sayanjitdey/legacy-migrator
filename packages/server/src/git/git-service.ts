@@ -1,11 +1,31 @@
 import simpleGit, { SimpleGit } from "simple-git";
 import fs from "fs";
+import os from "os";
 import path from "path";
 
 const MIGRATION_BRANCH_PREFIX = "legacy-migrator";
 
+// Only allow real remote git URLs — blocks local path/file:// clone
+// targets that could otherwise be used to read arbitrary filesystem
+// paths back out through the cloned working copy.
+const ALLOWED_REPO_URL = /^(https:\/\/[\w.-]+\/[\w.\-/]+?(?:\.git)?|git@[\w.-]+:[\w.\-/]+?(?:\.git)?)$/;
+
 function getGit(repoRoot: string): SimpleGit {
   return simpleGit({ baseDir: repoRoot });
+}
+
+export async function cloneRepo(repoUrl: string): Promise<string> {
+  if (!ALLOWED_REPO_URL.test(repoUrl)) {
+    throw new Error(`Refusing to clone '${repoUrl}' — only https:// or git@ remote URLs are allowed.`);
+  }
+
+  const targetDir = path.join(os.tmpdir(), `legacy-migrator-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  fs.mkdirSync(targetDir, { recursive: true });
+
+  const git = simpleGit();
+  await git.clone(repoUrl, targetDir, ["--depth", "1"]);
+
+  return targetDir;
 }
 
 export async function ensureMigrationBranch(repoRoot: string): Promise<string> {

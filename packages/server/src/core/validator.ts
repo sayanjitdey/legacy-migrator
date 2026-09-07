@@ -15,16 +15,33 @@ export interface ValidationResult {
  * real ts-morph Project (loaded with the repo's actual tsconfig, so it has
  * real type information — React types, etc.) and ask for diagnostics.
  */
+// Validation always happens inside this package's own tree, regardless of
+// where originalFilePath lives. Generated code is type-checked using OUR
+// installed React types, not the original repo's — the source may come
+// from a git-cloned repo (in os.tmpdir(), never npm-installed) that has no
+// node_modules of its own, so resolving "react" from its actual directory
+// would always fail with a spurious "Cannot find module" error.
+const VALIDATION_SCRATCH_DIR = path.join(__dirname, "..", "..", ".validate-tmp");
+
 export function validateGeneratedCode(
   originalFilePath: string,
   generatedCode: string
 ): ValidationResult {
   const dir = path.dirname(originalFilePath);
   const base = path.basename(originalFilePath, path.extname(originalFilePath));
-  const tempFilePath = path.join(dir, `${base}.generated.tsx`);
+  fs.mkdirSync(VALIDATION_SCRATCH_DIR, { recursive: true });
+  const tempFilePath = path.join(VALIDATION_SCRATCH_DIR, `${base}.generated.tsx`);
 
   const project = new Project({
     tsConfigFilePath: path.join(__dirname, "..", "..", "tsconfig.json"),
+    // Generated code always types its own `props` explicitly, so this
+    // isn't relaxing a check on the migration itself — it's needed because
+    // the generated file also carries forward whatever untyped sibling
+    // code (helper components, plain JS functions) the original file had.
+    // For a plain-JS source repo those were never typed to begin with, and
+    // flagging that as a validation failure would reject nearly every
+    // migration from a JS codebase over code the migration didn't touch.
+    compilerOptions: { noImplicitAny: false },
   });
 
   // Overwrite: true lets us re-run this repeatedly without ts-morph
@@ -38,7 +55,20 @@ export function validateGeneratedCode(
   // `this` where it doesn't exist, wrong prop types, etc.) in one pass.
   const diagnostics: Diagnostic[] = project
     .getPreEmitDiagnostics()
-    .filter((d) => d.getSourceFile()?.getFilePath() === tempSourceFile.getFilePath());
+    .filter((d) => d.getSourceFile()?.getFilePath() === tempSourceFile.getFilePath())
+    // TS2307 "Cannot find module" on a *bare* package specifier (e.g.
+    // "react-router-dom") just means this repo's dependencies were never
+    // npm-installed — expected for a git-cloned target repo, not a defect
+    // the migration introduced. A *relative* specifier ("./Foo") failing
+    // to resolve is different: that would mean the codemod produced a
+    // genuinely broken reference, so those still fail validation.
+    .filter((d) => {
+      if (d.getCode() !== 2307) return true;
+      const message = d.getMessageText();
+      const messageText = typeof message === "string" ? message : message.getMessageText();
+      const specifier = messageText.match(/Cannot find module '([^']+)'/)?.[1] ?? "";
+      return specifier.startsWith(".") || specifier.startsWith("/");
+    });
 
   const diagnosticMessages = diagnostics.map((d) => {
     const lineNum = d.getLineNumber();

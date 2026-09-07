@@ -4,7 +4,9 @@ import path from "path";
 import { WebSocketServer, WebSocket } from "ws";
 import { migrationQueue } from "./queue/queue";
 import { setupQueueEventBroadcasting } from "./queue/queue-events";
-import { commitApprovedMigration, logRejection } from "./git/git-service";
+import { commitApprovedMigration, logRejection, cloneRepo } from "./git/git-service";
+import { classifyFile, ClassComponentReport } from "./core/classifier";
+import { Project } from "ts-morph";
 
 const TARGET_REPO_ROOT = process.env.TARGET_REPO_ROOT ?? path.join(__dirname, "..");
 
@@ -84,6 +86,53 @@ app.post("/api/migrate", async (req: Request, res: Response) => {
     files.map((filePath) => migrationQueue.add("migrate-file", { filePath }))
   );
   res.json({ jobIds: jobs.map((j: { id?: string }) => j.id) });
+});
+
+app.post("/api/migrate-repo", async (req: Request, res: Response) => {
+  const { repoUrl } = req.body as { repoUrl?: string };
+  if (!repoUrl) {
+    res.status(400).json({ error: "repoUrl is required" });
+    return;
+  }
+
+  let repoPath: string;
+  try {
+    repoPath = await cloneRepo(repoUrl);
+  } catch (err) {
+    console.error("[migrate-repo] clone failed:", err);
+    res.status(400).json({ error: (err as Error).message });
+    return;
+  }
+
+  const project = new Project();
+  project.addSourceFilesAtPaths([
+    `${repoPath}/**/*.{tsx,jsx,js}`,
+    `!${repoPath}/**/node_modules/**`,
+  ]);
+
+  const reports: ClassComponentReport[] = [];
+  const filePaths: string[] = [];
+  for (const sourceFile of project.getSourceFiles()) {
+    const fileReports = classifyFile(sourceFile);
+    if (fileReports.length === 0) continue;
+    reports.push(...fileReports);
+    filePaths.push(sourceFile.getFilePath());
+  }
+
+  if (filePaths.length === 0) {
+    res.json({ repoPath, classified: reports, jobIds: [] });
+    return;
+  }
+
+  const jobs = await Promise.all(
+    filePaths.map((filePath) => migrationQueue.add("migrate-file", { filePath }))
+  );
+
+  res.json({
+    repoPath,
+    classified: reports,
+    jobIds: jobs.map((j: { id?: string }) => j.id),
+  });
 });
 
 const PORT = Number(process.env.PORT ?? 3001);

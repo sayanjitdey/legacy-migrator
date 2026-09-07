@@ -3,15 +3,31 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.cloneRepo = cloneRepo;
 exports.ensureMigrationBranch = ensureMigrationBranch;
 exports.commitApprovedMigration = commitApprovedMigration;
 exports.logRejection = logRejection;
 const simple_git_1 = __importDefault(require("simple-git"));
 const fs_1 = __importDefault(require("fs"));
+const os_1 = __importDefault(require("os"));
 const path_1 = __importDefault(require("path"));
 const MIGRATION_BRANCH_PREFIX = "legacy-migrator";
+// Only allow real remote git URLs — blocks local path/file:// clone
+// targets that could otherwise be used to read arbitrary filesystem
+// paths back out through the cloned working copy.
+const ALLOWED_REPO_URL = /^(https:\/\/[\w.-]+\/[\w.\-/]+?(?:\.git)?|git@[\w.-]+:[\w.\-/]+?(?:\.git)?)$/;
 function getGit(repoRoot) {
     return (0, simple_git_1.default)({ baseDir: repoRoot });
+}
+async function cloneRepo(repoUrl) {
+    if (!ALLOWED_REPO_URL.test(repoUrl)) {
+        throw new Error(`Refusing to clone '${repoUrl}' — only https:// or git@ remote URLs are allowed.`);
+    }
+    const targetDir = path_1.default.join(os_1.default.tmpdir(), `legacy-migrator-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    fs_1.default.mkdirSync(targetDir, { recursive: true });
+    const git = (0, simple_git_1.default)();
+    await git.clone(repoUrl, targetDir, ["--depth", "1"]);
+    return targetDir;
 }
 async function ensureMigrationBranch(repoRoot) {
     const git = getGit(repoRoot);

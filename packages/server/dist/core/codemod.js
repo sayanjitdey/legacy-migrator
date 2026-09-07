@@ -37,6 +37,30 @@ function capitalize(s) {
     return s.charAt(0).toUpperCase() + s.slice(1);
 }
 /**
+ * Adds whichever hooks (useState, useEffect, ...) the migration needs to
+ * the file's existing `react` import, instead of emitting a second,
+ * conflicting one. Files with no `react` import yet (unusual, but possible
+ * for automatic-JSX-runtime codebases) get one inserted at the top.
+ */
+function mergeReactImport(sourceFile, hooksUsed) {
+    const reactImport = sourceFile
+        .getImportDeclarations()
+        .find((imp) => imp.getModuleSpecifierValue() === "react");
+    if (!reactImport) {
+        const named = hooksUsed.length > 0 ? `, { ${hooksUsed.join(", ")} }` : "";
+        sourceFile.insertStatements(0, `import React${named} from "react";`);
+        return;
+    }
+    if (!reactImport.getDefaultImport()) {
+        reactImport.setDefaultImport("React");
+    }
+    const existingNamed = new Set(reactImport.getNamedImports().map((ni) => ni.getName()));
+    const missingHooks = hooksUsed.filter((h) => !existingNamed.has(h));
+    if (missingHooks.length > 0) {
+        reactImport.addNamedImports(missingHooks);
+    }
+}
+/**
  * Rewrites `this.state.x` -> `x` and `this.props.y` -> `props.y` throughout
  * a chunk of text-derived AST (we operate on cloned statement text, not the
  * live tree, to keep this pass simple for v1 — see limitations).
@@ -136,13 +160,17 @@ function generateHooksComponent(cls) {
         hooksUsed.push("useState");
     if (effectBlock)
         hooksUsed.push("useEffect");
-    const importLine = hooksUsed.length > 0
-        ? `import React, { ${hooksUsed.join(", ")} } from "react";`
-        : `import React from "react";`;
-    return [
-        importLine,
-        "",
-        `function ${className}(props: any) {`,
+    // Match however the class itself was exported, so we don't add a
+    // duplicate `export default` when the file already has a separate
+    // `export default Foo;` statement further down. Checked as literal
+    // modifiers on the class node (not ts-morph's semantic isDefaultExport,
+    // which also matches — and would double up with — that separate
+    // statement).
+    const hasExportModifier = cls.hasModifier(ts_morph_1.SyntaxKind.ExportKeyword);
+    const hasDefaultModifier = cls.hasModifier(ts_morph_1.SyntaxKind.DefaultKeyword);
+    const exportPrefix = hasExportModifier ? (hasDefaultModifier ? "export default " : "export ") : "";
+    const functionText = [
+        `${exportPrefix}function ${className}(props: any) {`,
         useStateLines,
         effectBlock,
         ...methodBlocks,
@@ -151,9 +179,14 @@ function generateHooksComponent(cls) {
         `    ${jsxText}`,
         `  );`,
         `}`,
-        "",
-        `export default ${className};`,
     ]
         .filter((line) => line !== "")
         .join("\n");
+    const sourceFile = cls.getSourceFile();
+    // Replace only the class's own text — every other top-level declaration
+    // in the file (imports, sibling components, helper functions, types)
+    // stays exactly as it was, instead of being silently dropped.
+    cls.replaceWithText(functionText);
+    mergeReactImport(sourceFile, hooksUsed);
+    return sourceFile.getFullText();
 }
