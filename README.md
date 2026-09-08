@@ -298,9 +298,8 @@ transform attempt, exactly as the classifier's hard-stop design intends.
 - [x] Week 3 — Validation loop (re-parse, `tsc --noEmit`, run test suite)
 - [x] Week 4 — LLM path + retry-on-validation-failure loop for `NEEDS_LLM` tier
 - [x] Week 5 — BullMQ job queue, one job per file
-- [ ] Week 5 — BullMQ job queue, one job per file
-- [ ] Week 6 — WebSocket progress streaming + React diff UI (Monaco)
-- [ ] Week 7 — Git branch workflow + stress test against a real messy repo
+- [x] Week 6 — WebSocket progress streaming + React diff UI (Monaco)
+- [x] Week 7 — Git branch workflow + stress test against a real messy repo
 - [ ] Week 8 — Polish, docs, demo
 - [ ] Weeks 9-10 (optional) — RAG layer: retrieve already-approved migrations
       from the same codebase as few-shot grounding for the LLM step
@@ -334,13 +333,6 @@ that isn't one of the fixtures — and definitely before making this public
       itself. A public version needs an actual "point this at a folder or
       an uploaded zip" entry point — this is also where the file-extension
       and tsconfig-loading work above actually gets exercised for real.
-- [ ] Week 4 — LLM path + retry-on-validation-failure loop for `NEEDS_LLM` tier
-- [ ] Week 5 — BullMQ job queue, one job per file
-- [ ] Week 6 — WebSocket progress streaming + React diff UI (Monaco)
-- [ ] Week 7 — Git branch workflow + stress test against a real messy repo
-- [ ] Week 8 — Polish, docs, demo
-- [ ] Weeks 9-10 (optional) — RAG layer: retrieve already-approved migrations
-      from the same codebase as few-shot grounding for the LLM step
 
 ## Why hybrid AST + LLM, not just "ask the LLM to rewrite the file"
 
