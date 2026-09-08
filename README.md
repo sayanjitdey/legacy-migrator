@@ -291,6 +291,158 @@ transform attempt, exactly as the classifier's hard-stop design intends.
   from the overview diagram) — needed before Week 6's dashboard can show
   status that survives a Redis flush.
 
+## Status: Week 6 — WebSocket Progress Streaming + React Diff UI ✅
+
+Three new pieces:
+
+- `packages/server/src/server.ts` — an Express + `WebSocketServer` attached
+  to the **same** `http.Server` instance (see the Week 6 known limitation
+  below for why that specific detail matters), broadcasting every message
+  to all connected clients.
+- `packages/server/src/queue/queue-events.ts` — `setupQueueEventBroadcasting()`
+  subscribes to BullMQ's Redis-backed `QueueEvents` (`active`, `completed`,
+  `failed`) and turns each into a `job_active` / `job_completed` /
+  `job_failed` WebSocket message. This is real pub/sub over Redis, not an
+  in-process callback — it fires correctly even if the worker emitting the
+  event is a different OS process than the server broadcasting it.
+- `packages/ui/` — a Vite + React app. `useJobSocket.ts` opens the
+  WebSocket, keeps a `jobs` map keyed by file+class, and shows an
+  "Analyzing…" placeholder row the moment a job goes active, replacing it
+  with real per-class results on completion. `DiffView.tsx` renders the
+  original vs. generated code as a live Monaco `DiffEditor` side-by-side
+  diff (`@monaco-editor/react`), with Approve/Reject actions on any
+  `NEEDS_LLM` or `MECHANICAL` result that reached `status: "done"`.
+
+### Try it
+
+Requires three things running at once — Redis, the worker, and the
+server — plus the UI dev server:
+
+```bash
+# Terminal 1 — Redis (default port 6379)
+redis-server
+
+# Terminal 2 — from packages/server, after `npx tsc`
+node dist/scripts/run-worker.js
+
+# Terminal 3 — from packages/server
+node dist/server.js
+
+# Terminal 4 — from the repo root
+npm run dev:ui
+```
+
+Open the URL Vite prints (default `http://localhost:5173`). Trigger a run
+from any client (see Week 7's `Try it` below for the real curl example)
+and watch job rows appear live in the sidebar, streamed over the
+WebSocket as each file is classified and migrated — no polling, no page
+refresh.
+
+### Known limitations (v1, honest list — Week 6 specific)
+
+- **Approve/Reject in the UI only updates local component state.**
+  `useJobSocket.ts`'s `setReviewDecision()` flips `job.reviewDecision` in
+  the browser and nothing else — it does not call the server's
+  `/api/jobs/approve` or `/api/jobs/reject` endpoints (see Week 7 below).
+  Those endpoints exist and work — verified directly against a real git
+  repo this session — but clicking Approve in the browser right now does
+  not yet trigger them. The code says this honestly in-line
+  (`DiffView.tsx`: "not yet wired to git (Week 7)").
+- **The WebSocketServer must be attached to the same listening
+  `http.Server` as the Express app, not a second one.** This bit
+  concretely: a refactor once introduced a second `http.Server` that
+  `WebSocketServer` was bound to while a separate `app.listen()` kept the
+  REST API working — the API looked fine, only the socket silently never
+  connected. Worth knowing if this code is ever restructured again.
+- **No reconnect/backoff on the client.** If the WebSocket drops (server
+  restart, network blip), `useJobSocket.ts` sets `connected: false` and
+  does not attempt to reconnect — a full page reload is currently required.
+
+## Status: Week 7 — Git Branch Workflow + Whole-Repo Ingestion ✅
+
+Three new pieces:
+
+- `packages/server/src/git/git-service.ts` — `ensureMigrationBranch()`
+  always checks out (or creates) a `legacy-migrator/run-<timestamp>`
+  branch before any write; `commitApprovedMigration()` writes the
+  generated file and commits only that one file to that branch, never
+  `main`. Writes are also guarded by `assertPathWithinRepo()` — the target
+  file path is resolved and checked against the repo root before
+  `fs.writeFileSync` ever runs, rejecting any path that would escape it.
+- `cloneRepo()` (same file) — clones an arbitrary public repo into a temp
+  directory for classification. The URL is checked against an allowlist
+  (only `https://` or `git@` remote URLs — no local paths, no `file://`)
+  before cloning. Since a cloned repo is never `npm install`ed, its
+  `node_modules` is deliberately linked (junction on Windows, symlink
+  elsewhere) back to this project's own, so `react`/`react-dom` type
+  resolution works during validation without needing the target repo's
+  own dependencies installed.
+- `POST /api/migrate-repo` (`server.ts`) — the actual whole-repo entry
+  point: clones the given repo, classifies every `.tsx`/`.jsx`/`.js` class
+  component in it (excluding `node_modules`), and enqueues one job per
+  file with at least one classified component.
+
+### Try it
+
+With the server running (see Week 6's `Try it` above):
+
+```bash
+curl -X POST http://localhost:3001/api/migrate-repo \
+  -H "Content-Type: application/json" \
+  -d '{"repoUrl": "https://github.com/gothinkster/react-redux-realworld-example-app.git"}'
+```
+
+Validated against this exact repo: 12 class components classified across
+the codebase (`Header`, `ListErrors` → `MECHANICAL`; `SettingsForm` →
+`NEEDS_LLM`; the remaining 9 — `App`, `Editor`, `Login`, `Profile`,
+`Register`, `Settings`, `CommentInput`, `Article`, `Home` — correctly
+routed to `NEEDS_HUMAN` as Redux `connect()`-wrapped HOCs), 11 jobs
+enqueued, and the two `MECHANICAL`-tier files (`Header.js`,
+`ListErrors.js`) migrated end-to-end with `status: "done"` and zero
+diagnostics.
+
+Also validated against a second, structurally different repo:
+
+```bash
+curl -X POST http://localhost:3001/api/migrate-repo \
+  -H "Content-Type: application/json" \
+  -d '{"repoUrl": "https://github.com/RowanCarmichael/react-functional-components-example.git"}'
+```
+
+This one has no `MECHANICAL`-tier components at all — both classified
+components (`ProfileFormContainer`, `ProfileForm`) correctly routed to
+`NEEDS_LLM` for multi-key `setState` calls the deterministic codemod
+can't safely rewrite. Run through the real local Ollama path
+(`qwen2.5-coder:14b`), both reached `status: "done"` with zero
+diagnostics after the retry loop self-corrected on real compiler
+feedback (see `error-feedback.ts`'s `useRef(null)`-typing guidance rule,
+added specifically because this repo's real code hit that exact pattern).
+
+This is also the real-world stress test `DESIGN_DECISIONS.md` §1
+describes: it's what surfaced the classifier's `ProfileForm.js`-shaped
+blind spot (state declared as a class field, no constructor) and, later
+in the same session, the LLM-path import-hallucination and CSS-module
+type-resolution gaps — each fixed at the root cause, not patched for the
+one file that exposed it.
+
+### Known limitations (v1, honest list — Week 7 specific)
+
+- **Not wired to the UI's Approve/Reject buttons yet** — see Week 6 above.
+  `/api/jobs/approve` and `/api/jobs/reject` work correctly when called
+  directly (verified this session, including a deliberate path-traversal
+  attempt correctly rejected), but nothing in the browser calls them yet.
+- **`/api/migrate-repo` only accepts a remote git URL, not a local folder
+  or an uploaded zip** — the "Upload/ingestion path" item under
+  Public-repo readiness (below) is about exactly this gap.
+- **No cleanup of cloned temp directories.** Each `cloneRepo()` call
+  leaves its clone sitting in the OS temp directory indefinitely — fine
+  for a demo/dev session, not fine left running unattended.
+- **History rewrite is out of scope even for a real leaked secret.** If a
+  real credential were ever found committed (see the Secrets scan in
+  `CLEANUP_CHECKLIST.md`), this tool does not attempt to purge git
+  history — that's a manual, explicitly-confirmed operation
+  (`git filter-repo` / BFG + force-push), never automatic.
+
 ## Roadmap
 
 - [x] Week 1 — AST classifier
@@ -306,33 +458,48 @@ transform attempt, exactly as the classifier's hard-stop design intends.
 
 ### Public-repo readiness (target: Week 7, before any public release)
 
-Currently this tool only recognizes `.tsx`. Before pointing it at a repo
-that isn't one of the fixtures — and definitely before making this public
-— the following need to land:
+Real progress landed here during Week 7's stress test — some items below
+are done, some are genuinely still open. Kept split out per item rather
+than marking the whole section done at once, since that's exactly the
+kind of all-or-nothing checkbox that caused the Week 4/5 duplication bug
+this section itself used to have.
 
-- [ ] **Multi-extension support.** Extend `classifyProject`'s glob from
-      `**/*.tsx` to also match `.jsx`, `.ts`, and `.js`, so plain-JS class
-      components aren't silently skipped.
-- [ ] **`allowJs: true` handling.** Plain `.js`/`.jsx` repos need the
-      `ts-morph`/`tsconfig` setup to accept JS input, and the validator
-      needs to be honest that type-error checking is much weaker (often
-      just undeclared-variable-level) without real TS types backing it —
-      this should be surfaced to the user, not silently assumed away.
+- [x] **Multi-extension support.** `classifyProject`'s glob now matches
+      `**/*.{tsx,jsx,js}` (excluding `node_modules`), so plain-JS class
+      components aren't silently skipped. Verified against real `.js`
+      repos in Week 7's `Try it` above.
+- [ ] **`allowJs`-style handling — functionally works, but not honestly
+      surfaced yet.** `ts-morph`'s default `Project` already parses JSX in
+      plain `.js` files correctly with no extra config (verified directly
+      before wiring this in). What's still missing: the validator doesn't
+      tell the user that type-checking a JS-origin file is inherently
+      weaker (no real prop types, no compile-time guarantees beyond
+      syntax) — it silently validates JS-origin and TS-origin code the
+      same way.
 - [ ] **Load the target repo's own `tsconfig.json`**, not this project's
       hardcoded one, in `validator.ts`. Real repos have their own path
       aliases, compiler options, and dependency types; validating against
-      the wrong config would produce misleading diagnostics.
-- [ ] **Codemod robustness beyond the three fixtures.** The current
-      `codemod.ts` has only been proven against `Counter`, `SearchBox`,
-      and `Modal`. Real components will have multi-key `setState` calls,
-      functional updates (`setState(prev => ...)`), destructured props,
-      and JSX shapes not yet exercised — expect failures here first when
-      testing against a real repo, and treat each one as a fixture to add,
-      not a one-off patch.
-- [ ] **Upload/ingestion path.** Right now every fixture lives in the repo
-      itself. A public version needs an actual "point this at a folder or
-      an uploaded zip" entry point — this is also where the file-extension
-      and tsconfig-loading work above actually gets exercised for real.
+      the wrong config would produce misleading diagnostics. (Partially
+      compensated for, not solved: `cloneRepo()` now links this project's
+      own `node_modules` into the cloned repo so `react` at least resolves
+      — see Week 7 above — but that's a workaround for one specific
+      missing piece, not the target repo's real config.)
+- [x] **Codemod robustness beyond the three fixtures — meaningfully
+      advanced, not "complete."** Fixed for real against components pulled
+      from an actual open-source repo (`Header.js`, `ListErrors.js`):
+      sibling top-level declarations (other components, helpers, types) in
+      the same file are now preserved instead of silently dropped, and the
+      generated export style now matches however the original was
+      exported instead of risking a duplicate-export error. Multi-key
+      `setState` and functional updates are still correctly routed to
+      `NEEDS_LLM` rather than attempted by the codemod — that boundary
+      hasn't changed, and doesn't need to.
+- [x] **Upload/ingestion path — a real entry point exists, narrower than
+      originally scoped.** `POST /api/migrate-repo` accepts a `repoUrl`
+      and clones it — this is the "point this at a real codebase" case,
+      validated against two independent public repos (Week 7 above). What
+      it does *not* do yet: accept a local folder path or an uploaded zip
+      — only a remote git URL.
 
 ## Why hybrid AST + LLM, not just "ask the LLM to rewrite the file"
 

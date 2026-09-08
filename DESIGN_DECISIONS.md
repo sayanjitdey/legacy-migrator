@@ -72,6 +72,21 @@ This is the most important bug in the whole project, and it's important for a sp
 
 ---
 
-## The throughline across all six
+## 7. Why the LLM only ever saw isolated class text — and why that turned out to be the bug, not a simplification
+
+**The decision**: `migrateWithRetry()` originally passed the LLM only `classSourceText` — the migrating class's own text, nothing else from the file it came from.
+
+**What proved this was wrong, not just minimal**: running the LLM path against real files pulled from an actual open-source repo (`ProfileForm.js`, `ProfileFormContainer.js`) surfaced hallucination, not a judgment failure. The migration logic itself was fine — the imports weren't: an invented relative path (`./Api` instead of the real `../../Api`), a fabricated package name (`'your-ui-library'` in place of the real `react-toolbox`), a guessed filename (`./ProfileForm.module.css` instead of the real `./ProfileForm.css`). The model wasn't reasoning about React incorrectly — it was reasoning about a file it had never actually seen, filling in plausible-looking paths for imports it could tell were needed from JSX usage but had no way to know the real value of.
+
+**The fix, and how it was verified, not just applied**: `MigrationRequest` gained an `existingImports` field — the original file's real `import` declarations, verbatim — threaded through `migrateWithRetry()` and into both LLM client prompts with an explicit "reuse these exact paths, don't invent" instruction. Re-run against the same two real files: every import path came back correct — `../../Api`, `./ProfileForm.css`, `react-toolbox/lib/input` — matching the actual source exactly, not a plausible guess. This is the same underlying shape as a bug found the same session in the deterministic codemod path: a migration step given a code fragment stripped of its file context will confidently invent what belongs there instead of reusing what's actually there — true whether that step is a hand-written codemod or an LLM.
+
+**A second, compounding discovery from the same real-world run**: fixing the import problem surfaced two further structural gaps underneath it, fixed the same way — verify against real behavior, find the actual cause, fix it generally rather than patch the one file:
+
+- TypeScript has no built-in notion of a CSS Modules import (`import styles from './Foo.css'`) — every real repo using CSS Modules would fail validation on that alone, regardless of whether the migration itself was correct. Fixed with an ambient `declare module "*.css"` shim added to the validation project's types, not a special case for this one file.
+- `useRef(null)` with no generic type argument infers `never`, so `.current.someMethod()` fails type-checking even behind a truthy guard — a common, real React+TypeScript gotcha the model kept reproducing. Added as a new rule to `error-feedback.ts`'s `enrichDiagnostics()` (the same enrichment mechanism from decision #3 above) rather than accepted as an unfixable model limitation: re-run against the same two real files, both converged to `status: done` within the retry budget instead of exhausting all 3 attempts.
+
+**Interview-ready version**: *"I found that giving the LLM only the isolated code fragment being migrated wasn't a simplification — it was the actual bug. It produced confident, plausible-looking hallucinated imports because the model had no way to know the real file structure. I fixed it by threading the original file's real imports into the prompt, verified against the exact real files that exposed the bug that import paths now come back correct, and found two more structural gaps in the same session — a missing CSS Modules type shim, a common useRef typing pattern — each fixed at the level of 'what's true for any repo with this pattern,' not patched for the one file that happened to expose it."*
+
+## The throughline across all seven
 
 Every one of these is the same shape: **build something, verify it against real behavior rather than trusting that it looks correct, find that it wasn't quite right, fix the root cause, and verify the fix the same way.** That loop — not any single clever piece of code — is the actual skill this project demonstrates, and it's the answer to give when asked "walk me through something that didn't work the way you expected."
